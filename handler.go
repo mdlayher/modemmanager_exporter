@@ -16,7 +16,10 @@ const (
 	// Prometheus metric names.
 	mmInfo                  = "modemmanager_info"
 	mmModemInfo             = "modemmanager_modem_info"
+	mmModemNetworkPortInfo  = "modemmanager_modem_network_port_info"
 	mmModemNetworkTimestamp = "modemmanager_network_timestamp_seconds"
+	mmModemPowerState       = "modemmanager_modem_power_state"
+	mmModemState            = "modemmanager_modem_state"
 	mmModemSignalLTERSRQ    = "modemmanager_modem_signal_lte_rsrq_db"
 	mmModemSignalLTERSRP    = "modemmanager_modem_signal_lte_rsrp_dbm"
 	mmModemSignalLTERSSI    = "modemmanager_modem_signal_lte_rssi_dbm"
@@ -41,9 +44,27 @@ func NewHandler(reg *prometheus.Registry, c *modemmanager.Client) http.Handler {
 	)
 
 	mm.ConstGauge(
+		mmModemNetworkPortInfo,
+		"Metadata about the attached network interface ports for a modem. Note that device refers to the network interface name, and not the modem name.",
+		"device_id", "device",
+	)
+
+	mm.ConstGauge(
 		mmModemNetworkTimestamp,
 		"The current UNIX timestamp as reported by a modem's cellular network.",
 		"device_id",
+	)
+
+	mm.ConstGauge(
+		mmModemPowerState,
+		"An enumeration of power states for a modem, where a value of 1 indicates the current state.",
+		"device_id", "state",
+	)
+
+	mm.ConstGauge(
+		mmModemState,
+		"An enumeration of cellular connection states for a modem, where a value of 1 indicates the current state.",
+		"device_id", "state",
 	)
 
 	mm.ConstGauge(
@@ -104,8 +125,14 @@ func onScrape(c *modemmanager.Client) metricslite.ScrapeFunc {
 					// Skip, handled outside this loop.
 				case mmModemInfo:
 					c(1.0, id, m.Revision, m.EquipmentIdentifier, m.Model)
+				case mmModemNetworkPortInfo:
+					portInfo(c, m)
 				case mmModemNetworkTimestamp:
 					c(float64(now.Unix()), id)
+				case mmModemPowerState:
+					powerState(c, m)
+				case mmModemState:
+					state(c, m)
 				case mmModemSignalLTERSRP:
 					c(s.LTE.RSRP, id)
 				case mmModemSignalLTERSRQ:
@@ -133,6 +160,122 @@ func onScrape(c *modemmanager.Client) metricslite.ScrapeFunc {
 		metrics[mmInfo](1.0, c.Version)
 
 		return nil
+	}
+}
+
+// portInfo collects a Modem's network port info metrics.
+func portInfo(c func(value float64, labels ...string), m *modemmanager.Modem) {
+	for _, p := range m.Ports {
+		// Only export information about network ports because they can be
+		// joined with other metrics such as those from node_exporter. It isn't
+		// clear that exporting AT, MBIM, etc. would be useful at this point.
+		if p.Type != modemmanager.PortTypeNet {
+			continue
+		}
+
+		c(1.0, m.DeviceIdentifier, p.Name)
+	}
+}
+
+// powerState collects a Modem's power state metrics as an enum.
+func powerState(c func(value float64, labels ...string), m *modemmanager.Modem) {
+	states := []struct {
+		s  string
+		ps modemmanager.PowerState
+	}{
+		{
+			s:  "unknown",
+			ps: modemmanager.PowerStateUnknown,
+		},
+		{
+			s:  "off",
+			ps: modemmanager.PowerStateOff,
+		},
+		{
+			s:  "low",
+			ps: modemmanager.PowerStateLow,
+		},
+		{
+			s:  "on",
+			ps: modemmanager.PowerStateOn,
+		},
+	}
+
+	// Export all power states but note the active one with a value of 1.0.
+	for _, s := range states {
+		var f float64
+		if s.ps == m.PowerState {
+			f = 1.0
+		}
+
+		c(f, m.DeviceIdentifier, s.s)
+	}
+}
+
+// state collects a Modem's state metrics as an enum.
+func state(c func(value float64, labels ...string), m *modemmanager.Modem) {
+	states := []struct {
+		s  string
+		st modemmanager.State
+	}{
+		{
+			s:  "failed",
+			st: modemmanager.StateFailed,
+		},
+		{
+			s:  "unknown",
+			st: modemmanager.StateUnknown,
+		},
+		{
+			s:  "locked",
+			st: modemmanager.StateLocked,
+		},
+		{
+			s:  "disabled",
+			st: modemmanager.StateDisabled,
+		},
+		{
+			s:  "disabling",
+			st: modemmanager.StateDisabling,
+		},
+		{
+			s:  "enabling",
+			st: modemmanager.StateEnabling,
+		},
+		{
+			s:  "enabled",
+			st: modemmanager.StateEnabled,
+		},
+		{
+			s:  "searching",
+			st: modemmanager.StateSearching,
+		},
+		{
+			s:  "registered",
+			st: modemmanager.StateRegistered,
+		},
+		{
+			s:  "disconnecting",
+			st: modemmanager.StateDisconnecting,
+		},
+		{
+			s:  "connecting",
+			st: modemmanager.StateConnecting,
+		},
+		{
+			s:  "connected",
+			st: modemmanager.StateConnected,
+		},
+	}
+
+	// Export all power states but note the active one with a value of 1.0.
+	for _, s := range states {
+		var f float64
+		if s.st == m.State {
+			f = 1.0
+		}
+
+		c(f, m.DeviceIdentifier, s.s)
 	}
 }
 
