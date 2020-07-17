@@ -31,6 +31,15 @@ const (
 func NewHandler(reg *prometheus.Registry, c *modemmanager.Client) http.Handler {
 	mm := metricslite.NewPrometheus(reg)
 
+	// Each scrape will use the MM client to fetch data.
+	register(mm)
+	mm.OnConstScrape(onScrape(c))
+
+	return promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
+}
+
+// register registers the exporter's metrics with the input metrics interface.
+func register(mm metricslite.Interface) {
 	mm.ConstGauge(
 		mmInfo,
 		"Metadata about the ModemManager daemon.",
@@ -90,11 +99,6 @@ func NewHandler(reg *prometheus.Registry, c *modemmanager.Client) http.Handler {
 		"A modem's current LTE signal SNR (Signal-to-Noise Ratio) in dB.",
 		"device_id",
 	)
-
-	// Each scrape will use the MM client to fetch data.
-	mm.OnConstScrape(onScrape(c))
-
-	return promhttp.HandlerFor(reg, promhttp.HandlerOpts{})
 }
 
 // onScrape returns a metricslite.ScrapeFunc which uses a MM client to gather
@@ -116,36 +120,7 @@ func onScrape(c *modemmanager.Client) metricslite.ScrapeFunc {
 				return fmt.Errorf("failed to get signal strength: %v", err)
 			}
 
-			// Device ID is used as the unique key on metrics.
-			id := m.DeviceIdentifier
-
-			for name, c := range metrics {
-				switch name {
-				case mmInfo:
-					// Skip, handled outside this loop.
-				case mmModemInfo:
-					c(1.0, id, m.Revision, m.EquipmentIdentifier, m.Model)
-				case mmModemNetworkPortInfo:
-					portInfo(c, m)
-				case mmModemNetworkTimestamp:
-					c(float64(now.Unix()), id)
-				case mmModemPowerState:
-					powerState(c, m)
-				case mmModemState:
-					state(c, m)
-				case mmModemSignalLTERSRP:
-					c(s.LTE.RSRP, id)
-				case mmModemSignalLTERSRQ:
-					c(s.LTE.RSRQ, id)
-				case mmModemSignalLTERSSI:
-					c(s.LTE.RSSI, id)
-				case mmModemSignalLTESNR:
-					c(s.LTE.SNR, id)
-				default:
-					panicf("modemmanager_exporter: unhandled metric %q", name)
-				}
-			}
-
+			scrape(metrics, m, now, s)
 			return nil
 		})
 		if err != nil {
@@ -160,6 +135,39 @@ func onScrape(c *modemmanager.Client) metricslite.ScrapeFunc {
 		metrics[mmInfo](1.0, c.Version)
 
 		return nil
+	}
+}
+
+// scrape performs a single metrics collection pass for one modem and its data.
+func scrape(metrics map[string]func(value float64, labels ...string), m *modemmanager.Modem, now time.Time, s *modemmanager.Signal) {
+	// Device ID is used as the unique key on metrics.
+	id := m.DeviceIdentifier
+
+	for name, c := range metrics {
+		switch name {
+		case mmInfo:
+			// Skip, handled outside this loop.
+		case mmModemInfo:
+			c(1.0, id, m.Revision, m.EquipmentIdentifier, m.Model)
+		case mmModemNetworkPortInfo:
+			portInfo(c, m)
+		case mmModemNetworkTimestamp:
+			c(float64(now.Unix()), id)
+		case mmModemPowerState:
+			powerState(c, m)
+		case mmModemState:
+			state(c, m)
+		case mmModemSignalLTERSRP:
+			c(s.LTE.RSRP, id)
+		case mmModemSignalLTERSRQ:
+			c(s.LTE.RSRQ, id)
+		case mmModemSignalLTERSSI:
+			c(s.LTE.RSSI, id)
+		case mmModemSignalLTESNR:
+			c(s.LTE.SNR, id)
+		default:
+			panicf("modemmanager_exporter: unhandled metric %q", name)
+		}
 	}
 }
 
