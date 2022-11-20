@@ -13,6 +13,7 @@ import (
 	"github.com/mdlayher/modemmanager"
 	modemmanagerexporter "github.com/mdlayher/modemmanager_exporter"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
 )
 
 func main() {
@@ -49,9 +50,9 @@ func main() {
 	// Set up the Prometheus registry and exporter handler.
 	reg := prometheus.NewPedanticRegistry()
 	reg.MustRegister(
-		prometheus.NewBuildInfoCollector(),
-		prometheus.NewGoCollector(),
-		prometheus.NewProcessCollector(prometheus.ProcessCollectorOpts{}),
+		collectors.NewBuildInfoCollector(),
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
 
 	mux := http.NewServeMux()
