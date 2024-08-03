@@ -110,9 +110,12 @@ func onScrape(c *modemmanager.Client) metricslite.ScrapeFunc {
 
 		err := c.ForEachModem(ctx, func(ctx context.Context, m *modemmanager.Modem) error {
 			// Perform any necessary calls before exporting any metrics.
+			var nowp *time.Time
 			now, err := m.GetNetworkTime(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to get network time: %v", err)
+				nowp = nil
+			} else {
+				nowp = &now
 			}
 
 			s, err := m.Signal(ctx)
@@ -120,7 +123,7 @@ func onScrape(c *modemmanager.Client) metricslite.ScrapeFunc {
 				return fmt.Errorf("failed to get signal strength: %v", err)
 			}
 
-			scrape(metrics, m, now, s)
+			scrape(metrics, m, nowp, s)
 			return nil
 		})
 		if err != nil {
@@ -139,7 +142,7 @@ func onScrape(c *modemmanager.Client) metricslite.ScrapeFunc {
 }
 
 // scrape performs a single metrics collection pass for one modem and its data.
-func scrape(metrics map[string]func(value float64, labels ...string), m *modemmanager.Modem, now time.Time, s *modemmanager.Signal) {
+func scrape(metrics map[string]func(value float64, labels ...string), m *modemmanager.Modem, now *time.Time, s *modemmanager.Signal) {
 	// Device ID is used as the unique key on metrics.
 	id := m.DeviceIdentifier
 
@@ -152,7 +155,9 @@ func scrape(metrics map[string]func(value float64, labels ...string), m *modemma
 		case mmModemNetworkPortInfo:
 			portInfo(c, m)
 		case mmModemNetworkTimestamp:
-			c(float64(now.Unix()), id)
+			if now != nil {
+				c(float64(now.Unix()), id)
+			}
 		case mmModemPowerState:
 			powerState(c, m)
 		case mmModemState:

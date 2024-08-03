@@ -21,6 +21,7 @@ func TestMetrics(t *testing.T) {
 		s.LTE.RSRQ = -17
 		s.LTE.RSSI = -81
 		s.LTE.SNR = 1
+		now := time.Unix(1, 0)
 
 		scrape(
 			metrics,
@@ -42,7 +43,7 @@ func TestMetrics(t *testing.T) {
 				State:      modemmanager.StateConnected,
 				Revision:   "2020-07-17",
 			},
-			time.Unix(1, 0),
+			&now,
 			&s,
 		)
 		return nil
